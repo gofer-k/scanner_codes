@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:scanner_codes/qr_code_generator.dart';
 import 'package:scanner_codes/qr_code_reader.dart';

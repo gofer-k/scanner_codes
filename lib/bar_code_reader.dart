@@ -1,6 +1,5 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 class BarCodeReader extends StatefulWidget {
   const BarCodeReader({super.key});
@@ -10,29 +9,16 @@ class BarCodeReader extends StatefulWidget {
 }
 
 class _BarCodeReaderState extends State<BarCodeReader>  with WidgetsBindingObserver {
-  String _scanBarcode = 'Unknown';
+  Barcode? _barCode;
+  bool _isBarCodeScanned = false;
+  final _initialValue = "No display value";
 
-  @override
-  void initState() {
-    super.initState();
-    // Start listening to lifecycle changes.
-    WidgetsBinding.instance.addObserver(this);
-
-    // Start listening to the barcode events.
-    // _subscription = controller.barcodes.listen(_handleBarcode);
-    //
-    // // Finally, start the scanner itself.
-    // unawaited(controller.start());
-  }
+  late String _scannedValue = _initialValue;
 
   @override
   Widget build(BuildContext context) {
     // For this example we check how width or tall the device is and change the scanArea and overlay accordingly.
     final screenSize = MediaQuery.of(context).size;
-    var scanArea = (screenSize.width < 400 ||
-        screenSize.height < 400)
-        ? 200.0
-        : 300.0;
     final titleFontSize = screenSize.width < 400 ? 18.0 : 22.0;
 
     return Container(
@@ -61,53 +47,141 @@ class _BarCodeReaderState extends State<BarCodeReader>  with WidgetsBindingObser
             ),
           ),
         ),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // ElevatedButton(
-                //     onPressed: () => scanBarcodeNormal(),
-                //     child: Text('Start barcode scan')),
-                // ElevatedButton(
-                //     onPressed: () => startBarcodeScanStream(),
-                //     child: Text('Start barcode scan stream')),
-                Text('Scan result : $_scanBarcode\n',
-                    style: TextStyle(fontSize: titleFontSize))
-              ],
-            );
-          },
-        ),
-      ),
+        body: LayoutBuilder(builder: (context, constraints) {
+          final Size layoutSize = constraints.biggest;
+          final double scanWindowWidth = layoutSize.width;  // / 3;
+          final double scanWindowHeight = layoutSize.height;  // / 2;
+          final Rect scanWindow = Rect.fromCenter(
+            center: layoutSize.center(Offset.zero),
+            width: scanWindowWidth,
+            height: scanWindowHeight,
+          );
+          return Stack(
+            children: [
+              MobileScanner(
+                onDetect: _handleBarcode,
+                scanWindow: scanWindow,
+
+              ),
+              Positioned.fill(
+                // left: scanWindow.left,
+                // top: scanWindow.top,
+                // width: scanWindow.width,
+                // height: scanWindow.height,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _isBarCodeScanned ? Colors.green : Colors.red,
+                      width: 4
+                    ),
+                  )
+                ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  alignment: Alignment.bottomCenter,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  height: 150,
+                  color: const Color.fromRGBO(0, 0, 0, 0.4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(child:
+                        Center(
+                          child: _barcodePreview(_barCode)
+                        )
+                      )
+                    ]
+                  )
+                ),
+              )
+            ],
+          );
+        })
+      )
     );
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // If the controller is not ready, do not try to start or stop it.
-    // // Permission dialogs can trigger lifecycle changes before the controller is ready.
-    // if (!controller.value.hasCameraPermission) {
-    //   return;
-    // }
-    //
-    // switch (state) {
-    //   case AppLifecycleState.detached:
-    //   case AppLifecycleState.hidden:
-    //   case AppLifecycleState.paused:
-    //     return;
-    //   case AppLifecycleState.resumed:
-    //   // Restart the scanner when the app is resumed.
-    //   // Don't forget to resume listening to the barcode events.
-    //     _subscription = controller.barcodes.listen(_handleBarcode);
-    //
-    //     unawaited(controller.start());
-    //   case AppLifecycleState.inactive:
-    //   // Stop the scanner when the app is paused.
-    //   // Also stop the barcode events subscription.
-    //     unawaited(_subscription?.cancel());
-    //     _subscription = null;
-    //     unawaited(controller.stop());
-    // }
+  Widget _barcodePreview(Barcode? value) {
+    _scannedValue = (value == null ? _initialValue : value.displayValue)!;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _scannedValue,
+          overflow: TextOverflow.fade,
+          style: const TextStyle(color: Colors.white),
+        ),
+        if (value?.calendarEvent != null)
+          Text(
+            "Event date: ${value?.calendarEvent.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.contactInfo != null)
+          Text(
+            "Info: ${value?.contactInfo.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.driverLicense != null)
+          Text(
+            "Driving license: ${value?.driverLicense.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.email != null)
+          Text(
+            "Email: ${value?.email.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.phone != null)
+          Text(
+            "Phone: ${value?.phone.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.url != null)
+          Text(
+            "Url: ${value?.url.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.geoPoint != null)
+          Text(
+            "Location: ${value?.geoPoint.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+        if (value?.wifi != null)
+          Text(
+            "Wifi: ${value?.wifi.toString()}",
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Colors.white),
+          ),
+      ],
+    );
+  }
+
+  void _handleBarcode(BarcodeCapture barcodes) {
+    if (mounted) {
+      setState(() {
+        _barCode = barcodes.barcodes.firstOrNull;
+        _isBarCodeScanned = _barCode != null;
+      });
+    }
+    if (_isBarCodeScanned) {
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          setState(() {
+            _isBarCodeScanned = false;
+          });
+        }
+      });
+    }
   }
 }
 
