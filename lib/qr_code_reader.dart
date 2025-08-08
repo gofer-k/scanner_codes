@@ -1,8 +1,6 @@
-import 'dart:developer';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:scanner_codes/scanner_overlay_painter.dart';
 
 class QRCodeReader extends StatefulWidget {
   const QRCodeReader({super.key});
@@ -12,31 +10,25 @@ class QRCodeReader extends StatefulWidget {
 }
 
 class _QRCodeReaderState extends State<QRCodeReader>{
-  final GlobalKey _qrKey = GlobalKey(debugLabel: 'QR');
-  Barcode? barcode;
-  QRViewController? _controller;
+  late List<Barcode> barcodes;
 
-  // In order to get hot reload to work we need to pause the camera if the platform
-  // is android, or resume the camera if the platform is iOS.
+  final MobileScannerController _scannerController = MobileScannerController(
+    facing: CameraFacing.back,
+    torchEnabled: false,
+    formats: [BarcodeFormat.qrCode],
+    autoZoom: true,
+  );
+
   @override
-  void reassemble() {
-    super.reassemble();
-    if (Platform.isAndroid) {
-      _controller!.pauseCamera();
-    }
-    _controller!.resumeCamera();
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
   }
 
-  @override
+  // @override
   Widget build(BuildContext context) {
-    // For this example we check how width or tall the device is and change the scanArea and overlay accordingly.
     final screenSize = MediaQuery.of(context).size;
-    var scanArea = (screenSize.width < 400 ||
-        screenSize.height < 400)
-        ? 200.0
-        : 300.0;
     final titleFontSize = screenSize.width < 400 ? 18.0 : 22.0;
-
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -67,47 +59,45 @@ class _QRCodeReaderState extends State<QRCodeReader>{
           children: [
             Expanded(
               flex: 4,
-              child: Stack(
-                children: [
-                  QRView(
-                    key: _qrKey,
-                    overlay: QrScannerOverlayShape(
-                      borderColor: Colors.white,
-                      borderRadius: 10,
-                      borderLength: 30,
-                      borderWidth: 10,
-                      cutOutSize: scanArea,
+              child: LayoutBuilder(builder: (context, constraints) {
+                final Size layoutSize = constraints.biggest;
+                final double scanWindowWidth = 300.0;
+                final double scanWindowHeight = 300.0;
+                final Rect scanWindow = Rect.fromCenter(
+                  center: layoutSize.center(Offset.zero),
+                  width: scanWindowWidth,
+                  height: scanWindowHeight,
+                );
+                return Stack(
+                  children: [
+                    MobileScanner(
+                      controller: _scannerController,
+                      onDetect: _handleBarcode,
+                      scanWindow: scanWindow,
                     ),
-                    onQRViewCreated: _onQRViewCreated,
-                    onPermissionSet: (ctrl, permitted) => _onPermissionSet(context, ctrl, permitted),
-                  ),
-                  Positioned(
-                    bottom: 20,
-                    left: 8,
-                    right: 8,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        flashButton(),
-                        cameraButton(),
-                      ],
-                    )),
-                ],
-              )
-            ),
-            Expanded(
-              flex: 1,
-              child: Padding(
-                padding: EdgeInsets.only(top: 20),
-                child:
-                  (barcode != null)
-                    ? Text(
-                      'Bar code type: ${barcode?.format}, data: ${barcode?.code}',
-                      style: TextStyle(fontSize: 20),
-                      maxLines: null,)
-                    : const Text('Unknown  QR code',style: TextStyle(fontSize: 20, color: Colors.redAccent),),
-              ),
+                    CustomPaint(
+                      painter: ScannerOverlayPainter(
+                        scanWindow: scanWindow,
+                        borderColor: Colors.white, // Example: Green border
+                        borderWidth: 2.0,         // Example: Thicker border
+                        borderRadius: 16.0,        // Example: Slightly rounded corners
+                        // overlayColor: Colors.black.withOpacity(0.6), // Optional: adjust dimming
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 20,
+                      left: 8,
+                      right: 8,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          flashButton(),
+                          cameraButton(),
+                        ],
+                      ),)
+                  ],
+                );
+              }),
             ),
           ],
         ),
@@ -121,24 +111,21 @@ class _QRCodeReaderState extends State<QRCodeReader>{
       child: FloatingActionButton(
         mini: true,
         backgroundColor: Colors.transparent,
-        onPressed: () async {
-          await _controller?.toggleFlash();
-          setState(() {});
-        },
-        child: FutureBuilder(
-          future: _controller?.getFlashStatus(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const CircularProgressIndicator(color: Colors.blueAccent);
-            } else if (snapshot.hasError) {
-              return Icon(Icons.error_rounded, color: Colors.white);
+        onPressed: () => _scannerController.toggleTorch(),
+        child:
+          ValueListenableBuilder(valueListenable: _scannerController,
+          builder: (context, state, child) {
+            if (!state.isInitialized) {
+              return const Icon(Icons.no_flash, color: Colors.grey);
             }
-            else {
-              bool isFlashOn = snapshot.data ?? false;
-              return Icon(
-                isFlashOn ? Icons.flashlight_off_rounded : Icons.flashlight_on_rounded,
-                color: Colors.white
-              );
+            switch (state.torchState) {
+              case TorchState.auto:
+              case TorchState.off:
+                return const Icon(Icons.flash_off, color: Colors.grey);
+              case TorchState.on:
+                return const Icon(Icons.flash_on, color: Colors.yellow);
+              case TorchState.unavailable:
+                return const Icon(Icons.no_flash, color: Colors.grey);
             }
           },
         ),
@@ -152,28 +139,21 @@ class _QRCodeReaderState extends State<QRCodeReader>{
       child: FloatingActionButton(
         mini: true,
         backgroundColor: Colors.transparent,
-        onPressed: () async {
-          await _controller?.flipCamera();
-          setState(() {});
-        },
-        child: FutureBuilder(
-          future: _controller?.getCameraInfo(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const CircularProgressIndicator(color: Colors.blueAccent);
-            } else if (snapshot.hasError) {
-              return Icon(Icons.error_rounded, color: Colors.white,);
+        onPressed: () => _scannerController.switchCamera(),
+        child: ValueListenableBuilder(valueListenable: _scannerController,
+          builder: (context, state, child) {
+            if (!state.isInitialized || !state.isRunning) {
+              return const SizedBox.shrink();
             }
-            else if (snapshot.hasData) {
-              final cameraFacing = snapshot.data;
-              if (cameraFacing == CameraFacing.front) {
+            switch (state.cameraDirection) {
+              case CameraFacing.front:
                 return const Icon(Icons.camera_front_rounded, color: Colors.white,);
-              } else {
+              case CameraFacing.back:
                 return const Icon(Icons.camera_rear_rounded, color: Colors.white,);
-              }
-            }
-            else {
-              return const Icon(Icons.camera_alt_rounded, color: Colors.white,);
+              case CameraFacing.external:
+                return const Icon(Icons.usb_rounded, color: Colors.white,);
+              case CameraFacing.unknown:
+                return Icon(Icons.error_rounded, color: Colors.white,);
             }
           },
         )
@@ -181,21 +161,30 @@ class _QRCodeReaderState extends State<QRCodeReader>{
     );
   }
 
-  void _onPermissionSet(BuildContext context, QRViewController controller, bool permitted) {
-    log('${DateTime.now().toIso8601String()}_onPermissionSet $permitted');
-    if (!permitted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('no Permission')),
+  void _handleBarcode(BarcodeCapture captures) {
+    if (mounted) {
+      setState(() {
+        barcodes = captures.barcodes;
+      });
+    }
+    if (barcodes.isNotEmpty && barcodes.first.rawValue != null) {
+      showDialog(
+        context: context, // Use the context of _QRCodeReaderState
+        builder: (BuildContext dialogContext) { // It's good practice to use a different name for the dialog's context
+          return AlertDialog(
+            title: const Text('QR Code Scanned'),
+            content: Text('Data: ${barcodes.first.rawValue}'),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('OK'),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop(); // Dismiss the dialog
+                },
+              ),
+            ],
+          );
+        },
       );
     }
-  }
-  
-  void _onQRViewCreated(QRViewController controller) {
-    setState(() {
-      _controller = controller;
-      controller.scannedDataStream.listen((scanData) {
-        barcode = scanData;
-      });
-    });
   }
 }
